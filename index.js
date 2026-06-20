@@ -2,6 +2,12 @@ require("dotenv").config();
 const express = require("express");
 const { spawn } = require("child_process");
 const { randomUUID } = require("crypto");
+const path = require("path");
+
+const NPX = path.join(
+  path.dirname(process.execPath),
+  process.platform === "win32" ? "npx.cmd" : "npx"
+);
 const {
   StreamableHTTPServerTransport,
 } = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
@@ -32,9 +38,9 @@ function buildChildEnv(prefix) {
 // Spawn one MCP child process; returns { child, send(message) → Promise<response> }
 function makeChild(envOverrides, label) {
   const child = spawn(
-    "npx",
+    process.platform === "win32" ? `"${NPX}"` : NPX,
     ["-y", "-p", "@benborla29/mcp-server-mysql", "mcp-server-mysql"],
-    { env: { ...process.env, ...envOverrides }, stdio: ["pipe", "pipe", "pipe"] }
+    { env: { ...process.env, ...envOverrides }, stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" }
   );
 
   const pending = new Map();
@@ -58,6 +64,7 @@ function makeChild(envOverrides, label) {
     }
   });
 
+  child.stdin.on("error", (err) => console.error(`[${label}] stdin error:`, err.code));
   child.stderr.on("data", (d) => console.error(`[${label}] ERR:`, d.toString().trim()));
   child.on("error", (err) => console.error(`[${label}] spawn error:`, err));
   child.on("exit", (code, sig) => console.error(`[${label}] exited code=${code} sig=${sig}`));
@@ -73,7 +80,12 @@ function makeChild(envOverrides, label) {
           }
         }, 30000);
       }
-      child.stdin.write(JSON.stringify(message) + "\n");
+      try {
+        child.stdin.write(JSON.stringify(message) + "\n");
+      } catch (err) {
+        if (message.id !== undefined) pending.delete(message.id);
+        return reject(err);
+      }
       if (message.id === undefined) resolve(null);
     });
   }
@@ -101,8 +113,8 @@ function bridgeTransport(transport) {
         await transport.send({ ...r1, id });
 
       } else if (method === "notifications/initialized") {
-        db1.child.stdin.write(JSON.stringify(message) + "\n");
-        db2.child.stdin.write(JSON.stringify(message) + "\n");
+        try { db1.child.stdin.write(JSON.stringify(message) + "\n"); } catch {}
+        try { db2.child.stdin.write(JSON.stringify(message) + "\n"); } catch {}
 
       } else if (method === "tools/list") {
         const [s1, s2] = await Promise.allSettled([
@@ -130,8 +142,8 @@ function bridgeTransport(transport) {
         await transport.send({ ...r, id });
 
       } else {
-        db1.child.stdin.write(JSON.stringify(message) + "\n");
-        db2.child.stdin.write(JSON.stringify(message) + "\n");
+        try { db1.child.stdin.write(JSON.stringify(message) + "\n"); } catch {}
+        try { db2.child.stdin.write(JSON.stringify(message) + "\n"); } catch {}
       }
     } catch (err) {
       console.error("router error:", err.message);
@@ -155,6 +167,7 @@ app.post("/mcp", async (req, res) => {
   }
 
   if (!sessionId && isInitializeRequest(req.body)) {
+    let dbs;
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (id) => {
@@ -175,7 +188,7 @@ app.post("/mcp", async (req, res) => {
     };
 
     await transport.start();
-    const dbs = bridgeTransport(transport);
+    dbs = bridgeTransport(transport);
     return transport.handleRequest(req, res, req.body);
   }
 
