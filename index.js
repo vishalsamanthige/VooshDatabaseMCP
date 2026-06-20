@@ -78,7 +78,7 @@ function makeChild(envOverrides, label) {
             pending.delete(message.id);
             reject(new Error(`[${label}] timeout for id=${message.id}`));
           }
-        }, 30000);
+        }, 30 * 60 * 1000); // 30 minutes
       }
       try {
         child.stdin.write(JSON.stringify(message) + "\n");
