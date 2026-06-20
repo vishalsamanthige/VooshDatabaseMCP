@@ -111,7 +111,7 @@ function bridgeTransport(transport) {
         ]);
         const tools = [
           ...(s2.status === "fulfilled" ? s2.value.result.tools.map((t) => ({ ...t, name: `${db2Name}_${t.name}`, description: `[PRIMARY — use this first. Client identifier column is sql_client_id] ${t.description}` })) : []),
-          ...(s1.status === "fulfilled" ? s1.value.result.tools.map((t) => ({ ...t, name: `${db1Name}_${t.name}`, description: `[SECONDARY — use ONLY for restaurant_details and extraction log tables (extraction_log, daily_client_wise_extraction_logs, extraction_retry_audit, client_data_extraction_logs, client_wise_extraction_status)] ${t.description}` })) : []),
+          ...(s1.status === "fulfilled" ? s1.value.result.tools.map((t) => ({ ...t, name: `${db1Name}_${t.name}`, description: `[SECONDARY — use ONLY for: (1) restaurant_details which contains the true client details including accurate active/inactive status, (2) extraction log tables (extraction_log, daily_client_wise_extraction_logs, extraction_retry_audit, client_data_extraction_logs, client_wise_extraction_status)] ${t.description}` })) : []),
         ];
         if (s1.status === "rejected") console.error(`[${db1Name}] tools/list failed:`, s1.reason.message);
         if (s2.status === "rejected") console.error(`[${db2Name}] tools/list failed:`, s2.reason.message);
