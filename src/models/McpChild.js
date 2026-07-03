@@ -34,8 +34,9 @@ const SERVER_BIN = resolveServerBin();
 class McpChild {
   constructor(envOverrides, label) {
     this.label = label;
-    this.pending = new Map();
+    this.pending = new Map(); // id -> { resolve, reject, timer }
     this.buffer = "";
+    this.dead = false;
 
     this.child = spawn(process.execPath, [SERVER_BIN], {
       env: { ...process.env, ...envOverrides },
@@ -62,9 +63,10 @@ class McpChild {
         }
         const id = parsed.id;
         if (id !== undefined && this.pending.has(id)) {
-          const resolve = this.pending.get(id);
+          const entry = this.pending.get(id);
           this.pending.delete(id);
-          resolve(parsed);
+          clearTimeout(entry.timer);
+          entry.resolve(parsed);
         }
       }
     });
@@ -75,39 +77,67 @@ class McpChild {
     this.child.stderr.on("data", (d) =>
       console.error(`[${this.label}] ERR:`, d.toString().trim())
     );
-    this.child.on("error", (err) =>
-      console.error(`[${this.label}] spawn error:`, err)
-    );
-    this.child.on("exit", (code, sig) =>
-      console.error(`[${this.label}] exited code=${code} sig=${sig}`)
-    );
+    this.child.on("error", (err) => {
+      console.error(`[${this.label}] spawn error:`, err);
+      this._fail(`child error: ${err.message}`);
+    });
+    this.child.on("exit", (code, sig) => {
+      console.error(`[${this.label}] exited code=${code} sig=${sig}`);
+      this._fail(`child exited (code=${code} sig=${sig})`);
+    });
+  }
+
+  // Mark the child dead and reject every in-flight request immediately, so a
+  // crashed/exited child fails fast instead of every pending call hanging until
+  // its timeout fires.
+  _fail(reason) {
+    this.dead = true;
+    for (const [, entry] of this.pending) {
+      clearTimeout(entry.timer);
+      entry.reject(new Error(`[${this.label}] ${reason}`));
+    }
+    this.pending.clear();
   }
 
   // Send a JSON-RPC message. Resolves with the matching response when the
   // message carries an id; resolves immediately (null) for notifications.
   send(message) {
     return new Promise((resolve, reject) => {
-      if (message.id !== undefined) {
-        this.pending.set(message.id, resolve);
-        setTimeout(() => {
-          if (this.pending.has(message.id)) {
-            this.pending.delete(message.id);
-            reject(new Error(`[${this.label}] timeout for id=${message.id}`));
-          }
-        }, REQUEST_TIMEOUT_MS);
+      if (this.dead) {
+        return reject(new Error(`[${this.label}] child is not running`));
       }
+
+      if (message.id === undefined) {
+        try {
+          this.child.stdin.write(JSON.stringify(message) + "\n");
+        } catch (err) {
+          return reject(err);
+        }
+        return resolve(null);
+      }
+
+      const timer = setTimeout(() => {
+        if (this.pending.has(message.id)) {
+          this.pending.delete(message.id);
+          reject(new Error(`[${this.label}] timeout for id=${message.id}`));
+        }
+      }, REQUEST_TIMEOUT_MS);
+
+      this.pending.set(message.id, { resolve, reject, timer });
+
       try {
         this.child.stdin.write(JSON.stringify(message) + "\n");
       } catch (err) {
-        if (message.id !== undefined) this.pending.delete(message.id);
+        this.pending.delete(message.id);
+        clearTimeout(timer);
         return reject(err);
       }
-      if (message.id === undefined) resolve(null);
     });
   }
 
   // Fire-and-forget raw write (used for notifications). Never throws.
   write(message) {
+    if (this.dead) return;
     try {
       this.child.stdin.write(JSON.stringify(message) + "\n");
     } catch {

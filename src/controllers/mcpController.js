@@ -13,6 +13,7 @@ async function handlePost(req, res) {
   const sessionId = req.headers["mcp-session-id"];
 
   if (sessionId && sessionManager.has(sessionId)) {
+    sessionManager.touch(sessionId);
     return sessionManager
       .get(sessionId)
       .transport.handleRequest(req, res, req.body);
@@ -49,6 +50,7 @@ async function handleSessionRequest(req, res) {
   if (!sessionId || !sessionManager.has(sessionId)) {
     return res.status(400).send("Invalid or missing session ID");
   }
+  sessionManager.touch(sessionId);
   return sessionManager.get(sessionId).transport.handleRequest(req, res);
 }
 
