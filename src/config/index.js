@@ -8,15 +8,6 @@ const PORT = process.env.PORT || 3000;
 // call open (the old 30-minute value amplified reconnect storms).
 const REQUEST_TIMEOUT_MS = Number(process.env.MCP_REQUEST_TIMEOUT_MS) || 120000; // 2 min
 
-// Sessions with no activity for this long are torn down (children killed) so
-// leaked/abandoned sessions can't accumulate and exhaust DB connections.
-const SESSION_IDLE_TIMEOUT_MS =
-  Number(process.env.MCP_SESSION_IDLE_MS) || 30 * 60 * 1000; // 30 min
-
-// How often the idle-session reaper runs.
-const SESSION_REAP_INTERVAL_MS =
-  Number(process.env.MCP_SESSION_REAP_MS) || 60 * 1000; // 1 min
-
 // Human-friendly names for each database, used as the tool-name prefix.
 const DB1_NAME = process.env.DB1_MYSQL_DB || "db1";
 const DB2_NAME = process.env.DB2_MYSQL_DB || "db2";
@@ -39,8 +30,6 @@ function buildChildEnv(prefix) {
 module.exports = {
   PORT,
   REQUEST_TIMEOUT_MS,
-  SESSION_IDLE_TIMEOUT_MS,
-  SESSION_REAP_INTERVAL_MS,
   DB1_NAME,
   DB2_NAME,
   buildChildEnv,
