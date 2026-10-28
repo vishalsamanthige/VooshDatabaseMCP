@@ -8,6 +8,14 @@ const PORT = process.env.PORT || 3000;
 // call open (the old 30-minute value amplified reconnect storms).
 const REQUEST_TIMEOUT_MS = Number(process.env.MCP_REQUEST_TIMEOUT_MS) || 120000; // 2 min
 
+// Origins allowed to call /mcp from a browser (comma-separated). Requests with
+// no Origin header (non-browser clients) are always allowed; any other Origin
+// is rejected with 403 (DNS-rebinding protection required by the MCP spec).
+const ALLOWED_ORIGINS = (process.env.MCP_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 // Human-friendly names for each database, used as the tool-name prefix.
 const DB1_NAME = process.env.DB1_MYSQL_DB || "db1";
 const DB2_NAME = process.env.DB2_MYSQL_DB || "db2";
@@ -30,6 +38,7 @@ function buildChildEnv(prefix) {
 module.exports = {
   PORT,
   REQUEST_TIMEOUT_MS,
+  ALLOWED_ORIGINS,
   DB1_NAME,
   DB2_NAME,
   buildChildEnv,
